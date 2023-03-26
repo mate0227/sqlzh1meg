@@ -1,0 +1,73 @@
+-- 1. Kérdezzük le a budapesti születésű versenyzők adatait név szerint növekvő sorrendben.
+    SELECT * FROM O_VERSENYZOK WHERE SZUL_HELY = 'Budapest' ORDER BY NEV;
+
+-- 2. Kérdezzük le azokat  a versenyzőket, akiknek a születési dátuma meg van adva, mégpedig a nevüket, és az aktuális életkorukat, életkor szerint csökkenő sorrenben.
+    SELECT NEV,  
+    EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM SZUL_DAT) - 
+      CASE 
+        WHEN EXTRACT(MONTH FROM CURRENT_DATE) > EXTRACT(MONTH FROM SZUL_DAT) THEN 0
+        WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= EXTRACT(MONTH FROM SZUL_DAT) AND EXTRACT(DAY FROM CURRENT_DATE) >= EXTRACT(DAY FROM SZUL_DAT) THEN 0
+        ELSE 1 
+      END AS AGE
+    FROM O_VERSENYZOK WHERE SZUL_DAT IS NOT NULL ORDER BY AGE DESC;
+    
+-- 3. Kérdezzük le a küldő országokra vonatkozó alábbi statisztikákat földrész szerint csoportosítva: országok száma, össz. terület átlagos népsűrűség (lakosság/terület).
+-- A sorrend legyen országok száma szerint csökkenő.
+    SELECT FOLDRESZ, num_of_countries, (OSSZ_LAKOSSAG / OSSZ_TERULET) AS ARANY FROM (
+        SELECT FOLDRESZ, COUNT(*) AS num_of_countries, COUNT(TERULET) AS OSSZ_TERULET, COUNT(LAKOSSAG) AS OSSZ_LAKOSSAG 
+        FROM O_ORSZAGOK WHERE FOLDRESZ IS NOT NULL 
+        GROUP BY FOLDRESZ ORDER BY num_of_countries DESC)
+    ;
+-- 4. Kérdezzük le join-nal a dobogós versenyzők nevét  és helyezését (első, második, harmadik).
+    SELECT HELYEZES, NEV FROM O_EREDMENYEK 
+    INNER JOIN O_VERSENYZOK ON O_VERSENYZOK.AZON = O_EREDMENYEK.VERSENYZO_AZON 
+    WHERE HELYEZES BETWEEN 1 AND 3;
+-- 5. Kérdezzük le join-nak az egyes országok versenyzőinek dobogós helyezéseinek számát.
+    SELECT ORSZAG, COUNT(*) AS TOP_NUM FROM O_EREDMENYEK 
+    INNER JOIN O_VERSENYZOK ON O_VERSENYZOK.AZON = O_EREDMENYEK.VERSENYZO_AZON
+    INNER JOIN O_ORSZAGOK ON O_ORSZAGOK.AZON = O_VERSENYZOK.ORSZAG_AZON
+    WHERE HELYEZES BETWEEN 1 AND 3
+    GROUP BY ORSZAG
+    ORDER BY TOP_NUM DESC;
+
+-- 6. Kérdezzük le azon országokat, amelyeknek a területe átlagon felüli és lakossága átlagon aluli.
+    SELECT * FROM O_ORSZAGOK 
+    WHERE TERULET > (SELECT AVG(TERULET) FROM O_ORSZAGOK) 
+        AND LAKOSSAG < (SELECT AVG(LAKOSSAG) FROM O_ORSZAGOK);
+    
+-- 7. Kérdezzük le azon versenyzők nevét, akiknek van első helyezésük, de nincs második.
+    SELECT NEV FROM (
+        SELECT O_VERSENYZOK.NEV, COUNT(CASE WHEN HELYEZES = 1 THEN 1 END) AS FIRST, COUNT(CASE WHEN HELYEZES = 2 THEN 1 END) AS SECOND
+        FROM O_EREDMENYEK
+        INNER JOIN O_VERSENYZOK ON O_VERSENYZOK.AZON = O_EREDMENYEK.VERSENYZO_AZON
+        GROUP BY O_VERSENYZOK.NEV)
+        WHERE FIRST > 0 AND SECOND = 0
+    ORDER BY NEV;
+    -- 8.  Melyik ország versenyzője rendelkezik a legtöbb dobogós helyezéssel?
+    SELECT * FROM (
+        SELECT ORSZAG, COUNT(*) AS TOP_NUM FROM O_EREDMENYEK 
+        INNER JOIN O_VERSENYZOK ON O_VERSENYZOK.AZON = O_EREDMENYEK.VERSENYZO_AZON
+        INNER JOIN O_ORSZAGOK ON O_ORSZAGOK.AZON = O_VERSENYZOK.ORSZAG_AZON
+        WHERE HELYEZES BETWEEN 1 AND 3
+        GROUP BY ORSZAG
+        ORDER BY TOP_NUM DESC
+    ) WHERE ROWNUM = 1;
+-- 9. Melyik országban van az a versenyző, aki az ország összes aranyérméből arányosan a legtöbbet nyert.
+    SELECT ORSZAG FROM (
+        SELECT VERSENYZO_AZON, COUNT(*) AS AM FROM O_EREDMENYEK WHERE HELYEZES = 1 
+        GROUP BY VERSENYZO_AZON ORDER BY AM DESC
+    )
+    INNER JOIN O_VERSENYZOK ON O_VERSENYZOK.AZON = VERSENYZO_AZON
+    INNER JOIN O_ORSZAGOK ON ORSZAG_AZON = O_ORSZAGOK.AZON
+    WHERE ROWNUM = 1;
+    
+-- 10. Melyek azok az országok, ha vannak, amelyeknek több nő versenyzője szerzett érmet, mint férfi?
+    SELECT ORSZAG FROM (
+        SELECT O_ORSZAGOK.ORSZAG, 
+        COUNT(CASE WHEN O_VERSENYSZAMOK.FERFI_NOI = 'női' THEN 1 END) - COUNT(CASE WHEN O_VERSENYSZAMOK.FERFI_NOI = 'férfi' THEN 1 END) AS female_to_male_count_diff 
+        FROM O_VERSENYZOK
+        RIGHT JOIN O_EREDMENYEK ON O_EREDMENYEK.VERSENYZO_AZON = O_VERSENYZOK.AZON 
+        INNER JOIN O_VERSENYSZAMOK ON O_VERSENYSZAMOK.AZON  = O_EREDMENYEK.VERSENYSZAM_AZON
+        INNER JOIN O_ORSZAGOK ON O_ORSZAGOK.AZON = O_VERSENYZOK.ORSZAG_AZON
+        GROUP BY  O_ORSZAGOK.ORSZAG
+    ) WHERE female_to_male_count_diff > 0;
